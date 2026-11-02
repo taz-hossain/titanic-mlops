@@ -1,0 +1,42 @@
+stages:
+  preprocess:
+    cmd: python src/preprocess.py
+    deps:
+      - data/raw/titanic.csv
+      - src/preprocess.py
+      - src/features.py
+    params:
+      - data
+      - preprocess
+    outs:
+      - data/processed/train.csv
+      - data/processed/test.csv
+    metrics:
+      - data/processed/preprocess_stats.json:
+          cache: false
+
+  train:
+    cmd: python src/train.py
+    deps:
+      - data/processed/train.csv
+      - data/processed/test.csv
+      - src/train.py
+      - src/features.py
+    params:
+      - train
+    outs:
+      - models/model.joblib
+    metrics:
+      - models/metrics.json:
+          cache: false
+
+  monitor:
+    cmd: python src/monitor.py --source normal
+    deps:
+      - models/model.joblib
+      - src/monitor.py
+    params:
+      - monitoring
+    metrics:
+      - reports/monitoring_summary_normal.json:
+          cache: false

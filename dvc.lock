@@ -1,0 +1,94 @@
+schema: '2.0'
+stages:
+  preprocess:
+    cmd: python src/preprocess.py
+    deps:
+    - path: data/raw/titanic.csv
+      hash: md5
+      md5: 2309cc5f04782ed9bb6016d9f4e381cf
+      size: 61194
+    - path: src/features.py
+      hash: md5
+      md5: f6cc8769a75e678d0703b7bf1360288f
+      size: 2166
+    - path: src/preprocess.py
+      hash: md5
+      md5: bb80a8bce8d543e62c1f7d496e01210f
+      size: 1901
+    params:
+      params.yaml:
+        data:
+          raw_path: data/raw/titanic.csv
+          processed_dir: data/processed
+          test_size: 0.2
+          random_state: 42
+        preprocess:
+          fare_cap_quantile: 0.99
+    outs:
+    - path: data/processed/preprocess_stats.json
+      hash: md5
+      md5: c639ef43c737af99d72647723345db92
+      size: 191
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 20dfed8ee8ffc7e260360a86e7b89647
+      size: 11129
+    - path: data/processed/train.csv
+      hash: md5
+      md5: 4b516d62e9cf13edb4ec5277025114a0
+      size: 44036
+  train:
+    cmd: python src/train.py
+    deps:
+    - path: data/processed/test.csv
+      hash: md5
+      md5: 20dfed8ee8ffc7e260360a86e7b89647
+      size: 11129
+    - path: data/processed/train.csv
+      hash: md5
+      md5: 4b516d62e9cf13edb4ec5277025114a0
+      size: 44036
+    - path: src/features.py
+      hash: md5
+      md5: f6cc8769a75e678d0703b7bf1360288f
+      size: 2166
+    - path: src/train.py
+      hash: md5
+      md5: 13fa83a9dd17dd0895fa85e35a49625e
+      size: 7775
+    params:
+      params.yaml:
+        train:
+          experiment_name: titanic-survival
+          registered_model_name: titanic-classifier
+          cv_folds: 5
+    outs:
+    - path: models/metrics.json
+      hash: md5
+      md5: be4f3b54bde349d6a0f91446a0ecb754
+      size: 719
+    - path: models/model.joblib
+      hash: md5
+      md5: d2190e0fbec810b65a7e9d2390a8cab9
+      size: 161101
+  monitor:
+    cmd: python src/monitor.py --source normal
+    deps:
+    - path: models/model.joblib
+      hash: md5
+      md5: d2190e0fbec810b65a7e9d2390a8cab9
+      size: 161101
+    - path: src/monitor.py
+      hash: md5
+      md5: ea9120ed4910da110ef3492a1883d2c6
+      size: 6736
+    params:
+      params.yaml:
+        monitoring:
+          drift_share_threshold: 0.3
+          accuracy_drop_threshold: 0.05
+    outs:
+    - path: reports/monitoring_summary_normal.json
+      hash: md5
+      md5: 9b33929a4ca7b3da83ade0f0ea93ac9b
+      size: 398

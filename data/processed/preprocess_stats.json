@@ -1,0 +1,10 @@
+{
+  "raw_rows": 891,
+  "clean_rows": 891,
+  "train_rows": 712,
+  "test_rows": 179,
+  "fare_cap": 227.53,
+  "fares_capped_in_train": 7,
+  "missing_age_pct": 19.9,
+  "missing_cabin_pct": 77.1
+}

@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-11-02T23:07:18.262836+00:00",
+  "source": "normal",
+  "reference_rows": 712,
+  "current_rows": 179,
+  "drift_share": 0.077,
+  "drifted_columns": [
+    "Embarked"
+  ],
+  "reports": [
+    "reports/data_drift_normal.html",
+    "reports/model_performance_normal.html"
+  ],
+  "alerts": [],
+  "reference_accuracy": 0.7821,
+  "current_accuracy": 0.8156,
+  "accuracy_drop": -0.0335
+}

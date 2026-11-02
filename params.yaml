@@ -1,0 +1,21 @@
+
+data:
+  raw_path: data/raw/titanic.csv
+  processed_dir: data/processed
+  test_size: 0.2
+  random_state: 42
+
+preprocess:
+  fare_cap_quantile: 0.99  
+train:
+  experiment_name: titanic-survival
+  registered_model_name: titanic-classifier
+  cv_folds: 5
+
+quality_gate:
+  min_accuracy: 0.75
+  min_roc_auc: 0.80
+
+monitoring:
+  drift_share_threshold: 0.3    
+  accuracy_drop_threshold: 0.05  

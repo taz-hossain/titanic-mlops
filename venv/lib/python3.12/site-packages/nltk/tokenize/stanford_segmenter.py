@@ -1,0 +1,479 @@
+#!/usr/bin/env python
+# Natural Language Toolkit: Interface to the Stanford Segmenter
+# for Chinese and Arabic
+#
+# Copyright (C) 2001-2026 NLTK Project
+# Author: 52nlp <52nlpcn@gmail.com>
+#         Casper Lehmann-Strøm <casperlehmann@gmail.com>
+#         Alex Constantin <alex@keyworder.ch>
+#
+# URL: <https://www.nltk.org/>
+# For license information, see LICENSE.TXT
+
+import hashlib
+import json
+import os
+import tempfile
+import warnings
+from subprocess import PIPE
+
+from nltk import pathsec
+from nltk.data import staging_tempdir
+from nltk.internals import (
+    find_dir,
+    find_file,
+    find_jar,
+    java,
+)
+from nltk.pathsec import has_line_unsafe_char
+from nltk.pathsec import open as pathsec_open
+from nltk.pathsec import validate_path, validate_tool_dir, validate_tool_path
+from nltk.tokenize.api import TokenizerI
+
+_stanford_url = "https://nlp.stanford.edu/software"
+
+
+def _validated_options(options):
+    """Bound the caller-supplied ``options`` dict before it becomes ``-options``.
+
+    The pairs are joined into ONE comma-separated argv element, so a key holding
+    a ``,`` or an ``=`` silently injects extra option pairs that the wrapper
+    never intended. This is the same class as the parser's ``corenlp_options``:
+
+        {"normalize=true,serDictionary": "/etc/passwd"}
+        -> normalize=true,serDictionary="/etc/passwd"
+
+    Values are JSON-encoded, so they cannot break out of their own pair, but one
+    that names a file is still bounded to the data roots.
+    """
+    validated = {}
+    for key, value in options.items():
+        name = str(key)
+        if not name.strip():
+            raise ValueError(
+                "Security Violation [StanfordSegmenter options]: empty option name."
+            )
+        if any(character in name for character in ",=\t\n\r\x00 "):
+            raise ValueError(
+                f"Security Violation [StanfordSegmenter options]: option name "
+                f"{name!r} contains a separator, so it would inject extra "
+                "option pairs into the argument list."
+            )
+        if isinstance(value, (str, bytes, os.PathLike)):
+            # Materialise the real characters first: a str subclass can lie to
+            # the separator test below, and a PathLike is a path however spelt.
+            try:
+                value = str.__str__(os.fsdecode(value))
+            except TypeError as exc:
+                raise ValueError(
+                    f"Security Violation [StanfordSegmenter options[{name}]]: "
+                    f"{value!r} is not a filesystem path."
+                ) from exc
+            if os.path.isabs(value) or "/" in value or "\\" in value:
+                # A path-valued segmenter option is a model/dictionary/classifier
+                # the JVM reads; refuse a tamperable or oversized one too.
+                value = validate_tool_path(
+                    value,
+                    context=f"StanfordSegmenter options[{name}]",
+                    max_bytes=pathsec.MAX_TOOL_MODEL_BYTES,
+                    require_private=True,
+                )
+        validated[name] = value
+    return validated
+
+
+class StanfordSegmenter(TokenizerI):
+    """Interface to the Stanford Segmenter
+
+    If stanford-segmenter version is older than 2016-10-31, then path_to_slf4j
+    should be provided, for example::
+
+        seg = StanfordSegmenter(path_to_slf4j='/YOUR_PATH/slf4j-api.jar')
+
+    >>> from nltk.tokenize.stanford_segmenter import StanfordSegmenter
+    >>> seg = StanfordSegmenter() # doctest: +SKIP
+    >>> seg.default_config('zh') # doctest: +SKIP
+    >>> sent = u'这是斯坦福中文分词器测试'
+    >>> print(seg.segment(sent)) # doctest: +SKIP
+    \u8fd9 \u662f \u65af\u5766\u798f \u4e2d\u6587 \u5206\u8bcd\u5668 \u6d4b\u8bd5
+    <BLANKLINE>
+    >>> seg.default_config('ar') # doctest: +SKIP
+    >>> sent = u'هذا هو تصنيف ستانفورد العربي للكلمات'
+    >>> print(seg.segment(sent.split())) # doctest: +SKIP
+    \u0647\u0630\u0627 \u0647\u0648 \u062a\u0635\u0646\u064a\u0641 \u0633\u062a\u0627\u0646\u0641\u0648\u0631\u062f \u0627\u0644\u0639\u0631\u0628\u064a \u0644 \u0627\u0644\u0643\u0644\u0645\u0627\u062a
+    <BLANKLINE>
+    """
+
+    _JAR = "stanford-segmenter.jar"
+
+    def __init__(
+        self,
+        path_to_jar=None,
+        path_to_slf4j=None,
+        java_class=None,
+        path_to_model=None,
+        path_to_dict=None,
+        path_to_sihan_corpora_dict=None,
+        sihan_post_processing="false",
+        keep_whitespaces="false",
+        encoding="UTF-8",
+        options=None,
+        verbose=False,
+        java_options="-mx2g",
+    ):
+        # Raise deprecation warning.
+        warnings.simplefilter("always", DeprecationWarning)
+        warnings.warn(
+            str(
+                "\nThe StanfordTokenizer will "
+                "be deprecated in version 3.2.5.\n"
+                "Please use \033[91mnltk.parse.corenlp.CoreNLPTokenizer\033[0m instead.'"
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        stanford_segmenter = find_jar(
+            self._JAR,
+            path_to_jar,
+            env_vars=("STANFORD_SEGMENTER",),
+            searchpath=(),
+            url=_stanford_url,
+            verbose=verbose,
+        )
+        if path_to_slf4j is not None:
+            slf4j = find_jar(
+                "slf4j-api.jar",
+                path_to_slf4j,
+                env_vars=("SLF4J", "STANFORD_SEGMENTER"),
+                searchpath=(),
+                url=_stanford_url,
+                verbose=verbose,
+            )
+        else:
+            slf4j = None
+
+        # This is passed to java as the -cp option, the old version of segmenter needs slf4j.
+        # The new version of stanford-segmenter-2016-10-31 doesn't need slf4j
+        self._stanford_jar = os.pathsep.join(
+            _ for _ in [stanford_segmenter, slf4j] if _ is not None
+        )
+
+        self._java_class = java_class
+        self._model = path_to_model
+        self._sihan_corpora_dict = path_to_sihan_corpora_dict
+        self._sihan_post_processing = sihan_post_processing
+        self._keep_whitespaces = keep_whitespaces
+        self._dict = path_to_dict
+
+        self._encoding = encoding
+        self.java_options = java_options
+        options = {} if options is None else options
+        self._options_cmd = ",".join(
+            f"{key}={json.dumps(val)}"
+            for key, val in _validated_options(options).items()
+        )
+        self._jar_sha256_cache = {}
+
+    def default_config(self, lang):
+        """
+        Attempt to initialize Stanford Word Segmenter for the specified language
+        using the STANFORD_SEGMENTER and STANFORD_MODELS environment variables
+        """
+
+        search_path = ()
+        if os.environ.get("STANFORD_SEGMENTER"):
+            search_path = {os.path.join(os.environ.get("STANFORD_SEGMENTER"), "data")}
+
+        # init for Chinese-specific files
+        self._dict = None
+        self._sihan_corpora_dict = None
+        self._sihan_post_processing = "false"
+
+        if lang == "ar":
+            self._java_class = (
+                "edu.stanford.nlp.international.arabic.process.ArabicSegmenter"
+            )
+            model = "arabic-segmenter-atb+bn+arztrain.ser.gz"
+
+        elif lang == "zh":
+            self._java_class = "edu.stanford.nlp.ie.crf.CRFClassifier"
+            model = "pku.gz"
+            self._sihan_post_processing = "true"
+
+            path_to_dict = "dict-chris6.ser.gz"
+            try:
+                self._dict = find_file(
+                    path_to_dict,
+                    searchpath=search_path,
+                    url=_stanford_url,
+                    verbose=False,
+                    env_vars=("STANFORD_MODELS",),
+                )
+            except LookupError as e:
+                raise LookupError(
+                    "Could not find '%s' (tried using env. "
+                    "variables STANFORD_MODELS and <STANFORD_SEGMENTER>/data/)"
+                    % path_to_dict
+                ) from e
+
+            sihan_dir = "./data/"
+            try:
+                path_to_sihan_dir = find_dir(
+                    sihan_dir,
+                    url=_stanford_url,
+                    verbose=False,
+                    env_vars=("STANFORD_SEGMENTER",),
+                )
+                self._sihan_corpora_dict = os.path.join(path_to_sihan_dir, sihan_dir)
+            except LookupError as e:
+                raise LookupError(
+                    "Could not find '%s' (tried using the "
+                    "STANFORD_SEGMENTER environment variable)" % sihan_dir
+                ) from e
+        else:
+            raise LookupError(f"Unsupported language {lang}")
+
+        try:
+            self._model = find_file(
+                model,
+                searchpath=search_path,
+                url=_stanford_url,
+                verbose=False,
+                env_vars=("STANFORD_MODELS", "STANFORD_SEGMENTER"),
+            )
+        except LookupError as e:
+            raise LookupError(
+                "Could not find '%s' (tried using env. "
+                "variables STANFORD_MODELS and <STANFORD_SEGMENTER>/data/)" % model
+            ) from e
+
+    def tokenize(self, s):
+        super().tokenize(s)
+
+    def segment_file(self, input_file_path):
+        """ """
+        # Caller-supplied and handed to the JVM as -textFile, which pathsec.open
+        # cannot wrap; validate before the spawn (GHSA-8mgp-746c-j5xp). Build the
+        # argv from the returned string, never the original object: a PathLike can
+        # answer one way here and another way when the child resolves it.
+        input_file_path = validate_tool_path(
+            input_file_path, context="StanfordSegmenter.segment_file"
+        )
+        model, dictionary, sihan = self._validate_model_paths()
+        cmd = [
+            self._java_class,
+            "-loadClassifier",
+            model,
+            "-keepAllWhitespaces",
+            self._keep_whitespaces,
+            "-textFile",
+            input_file_path,
+        ]
+        if sihan is not None:
+            cmd.extend(
+                [
+                    "-serDictionary",
+                    dictionary,
+                    "-sighanCorporaDict",
+                    sihan,
+                    "-sighanPostProcessing",
+                    self._sihan_post_processing,
+                ]
+            )
+
+        stdout = self._execute(cmd)
+
+        return stdout
+
+    def segment(self, tokens):
+        return self.segment_sents([tokens])
+
+    def segment_sents(self, sentences):
+        """ """
+        encoding = self._encoding
+
+        # A line break in a token would inject an extra segmenter input line; a
+        # tab, NUL or other control character would be re-split or truncated by
+        # the tool. Refuse them by the shared line-safety rule, then build the
+        # input once and require one separator per sentence gap.
+        for sentence in sentences:
+            for token in sentence:
+                if has_line_unsafe_char(token):
+                    raise ValueError(
+                        "Tokens cannot contain newline characters, nor a tab, "
+                        "another line break, a control character or NUL: %r" % (token,)
+                    )
+        _input = "\n".join(" ".join(x) for x in sentences)
+        if _input.count("\n") != max(len(sentences) - 1, 0) or "\r" in _input:
+            raise ValueError("Tokens cannot contain newline characters.")
+
+        input_file_path = None
+        java_succeeded = False
+        try:
+            # Create a temporary input file
+            _input_fh, input_file_path = tempfile.mkstemp(
+                text=True, dir=staging_tempdir()
+            )
+            self._input_file_path = input_file_path
+
+            # mkstemp gives a race-free path inside the pathsec-validated 0700
+            # staging dir; reopen it through pathsec_open rather than the raw fd.
+            os.close(_input_fh)
+            if isinstance(_input, str) and encoding:
+                _input = _input.encode(encoding)
+            with pathsec_open(
+                input_file_path, "wb", context="StanfordSegmenter.segment_sents"
+            ) as input_fh:
+                input_fh.write(_input)
+
+            # Validate BEFORE building the command, and build it from the
+            # attributes the guard replaced. Capturing self._model into cmd first
+            # would put the original object there, and a PathLike may resolve to
+            # something else when the child process reads it.
+            model, dictionary, sihan = self._validate_model_paths()
+            cmd = [
+                self._java_class,
+                "-loadClassifier",
+                model,
+                "-keepAllWhitespaces",
+                self._keep_whitespaces,
+                "-textFile",
+                self._input_file_path,
+            ]
+            if sihan is not None:
+                cmd.extend(
+                    [
+                        "-serDictionary",
+                        dictionary,
+                        "-sighanCorporaDict",
+                        sihan,
+                        "-sighanPostProcessing",
+                        self._sihan_post_processing,
+                    ]
+                )
+
+            stdout = self._execute(cmd)
+            java_succeeded = True
+            return stdout
+        finally:
+            if input_file_path:
+                try:
+                    pathsec.unlink(input_file_path, context="StanfordSegmenter")
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    if java_succeeded:
+                        raise
+
+    def _sha256sum(self, file_path):
+        # file_path is a caller-controlled classpath entry; validate it before
+        # any filesystem access so an out-of-sandbox path fails without an
+        # os.stat metadata leak or symlink follow (CWE-22/CWE-59).
+        validate_path(file_path, context="StanfordSegmenter._sha256sum")
+        stat = os.stat(file_path)
+        cached = self._jar_sha256_cache.get(file_path)
+        cache_key = (stat.st_mtime_ns, stat.st_size)
+        if cached is not None:
+            cached_key, cached_digest = cached
+            if cached_key == cache_key:
+                return cached_digest
+
+        h = hashlib.sha256()
+        # Re-checked at open time by pathsec, whose O_NOFOLLOW closes the
+        # symlink-swap TOCTOU that a path-only validate_path cannot.
+        with pathsec_open(file_path, "rb", context="StanfordSegmenter._sha256sum") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                h.update(chunk)
+        digest = h.hexdigest()
+        self._jar_sha256_cache[file_path] = (cache_key, digest)
+        return digest
+
+    def _validate_classpath(self):
+        user_checksums = {
+            value.strip()
+            for value in os.environ.get("NLTK_SEGMENTER_ALLOW_SHA256", "").split(",")
+            if value.strip()
+        }
+
+        for jar_path in (p for p in self._stanford_jar.split(os.pathsep) if p):
+            jar_checksum = self._sha256sum(jar_path)
+
+            if jar_checksum not in user_checksums:
+                raise LookupError(
+                    "\n[SECURITY BLOCKED] Unverified Stanford Segmenter JAR detected:\n"
+                    f"  -> {jar_path}\n"
+                    f"  SHA256: {jar_checksum}\n\n"
+                    "This prevents arbitrary code execution via malicious JAR injection.\n"
+                    "To allow execution, verify and approve this checksum,\n"
+                    "then add it to the NLTK_SEGMENTER_ALLOW_SHA256 environment variable.\n\n"
+                    "Examples:\n"
+                    f'  Unix/macOS (bash/zsh): export NLTK_SEGMENTER_ALLOW_SHA256="{jar_checksum}"\n'
+                    f'  Windows PowerShell:    $env:NLTK_SEGMENTER_ALLOW_SHA256="{jar_checksum}"\n'
+                    f"  Windows cmd.exe:       set NLTK_SEGMENTER_ALLOW_SHA256={jar_checksum}\n\n"
+                    "Multiple approved checksums may be supplied as a comma-separated list."
+                )
+
+    def _validate_model_paths(self):
+        """Refuse model/dictionary paths that escape the NLTK data sandbox.
+
+        These are embedded in the JVM argv (-loadClassifier / -serDictionary /
+        -sighanCorporaDict), which pathsec.open cannot wrap, so they are checked
+        here before the process is spawned (GHSA-8mgp-746c-j5xp).
+
+        Each attribute is replaced with the string the guard returned, and the
+        same strings are RETURNED for the caller to build its argv from. A
+        PathLike may answer differently on every call, and ``validate_path``
+        reads a ``.path`` attribute in preference to ``__fspath__``, so
+        validating the object and then handing the same object to the JVM
+        checked one file and opened another.
+
+        Returning them matters beyond that: a caller that re-reads
+        ``self._model`` after this returns is reading shared mutable state again,
+        so a concurrent write could still swap the value between the check and
+        the argv. Building from the return value keeps the checked value and the
+        used value the same object.
+
+        :return: the validated (model, dictionary, sihan corpora dict) strings,
+            each None when it was unset
+        """
+        # Files the JVM loads whole get the tool-model guards (a tamperable or
+        # oversized one refused); the Sihan corpora dict is a DIRECTORY the JVM
+        # reads files from, so it gets the directory guard's private-tree check.
+        _model_kw = {"max_bytes": pathsec.MAX_TOOL_MODEL_BYTES, "require_private": True}
+        _dir_kw = {"require_private": True}
+        validated = []
+        for attribute, label, guard, guard_kw in (
+            ("_model", "model", validate_tool_path, _model_kw),
+            ("_dict", "dictionary", validate_tool_path, _model_kw),
+            ("_sihan_corpora_dict", "sihan corpora dict", validate_tool_dir, _dir_kw),
+        ):
+            value = getattr(self, attribute)
+            if value:
+                value = guard(value, context=f"StanfordSegmenter {label}", **guard_kw)
+                setattr(self, attribute, value)
+            validated.append(value)
+        return tuple(validated)
+
+    def _execute(self, cmd, verbose=False):
+        encoding = self._encoding
+        cmd.extend(["-inputEncoding", encoding])
+        _options_cmd = self._options_cmd
+        if _options_cmd:
+            cmd.extend(["-options", self._options_cmd])
+
+        self._validate_model_paths()
+        self._validate_classpath()
+
+        stdout, _stderr = java(
+            cmd,
+            classpath=self._stanford_jar,
+            stdout=PIPE,
+            stderr=PIPE,
+            options=self.java_options,
+        )
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode(encoding)
+
+        return stdout

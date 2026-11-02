@@ -1,0 +1,134 @@
+Metadata-Version: 2.4
+Name: nltk
+Version: 3.10.4
+Summary: Natural Language Toolkit
+Home-page: https://www.nltk.org/
+Author: NLTK Team
+Author-email: nltk.team@gmail.com
+Maintainer: NLTK Team
+Maintainer-email: nltk.team@gmail.com
+License: Apache License, Version 2.0
+Project-URL: Documentation, https://www.nltk.org/
+Project-URL: Source Code, https://github.com/nltk/nltk
+Project-URL: Issue Tracker, https://github.com/nltk/nltk/issues
+Keywords: NLP,CL,natural language processing,computational linguistics,parsing,tagging,tokenizing,syntax,linguistics,language,natural language,text analytics
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Information Technology
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Scientific/Engineering :: Human Machine Interfaces
+Classifier: Topic :: Scientific/Engineering :: Information Analysis
+Classifier: Topic :: Text Processing
+Classifier: Topic :: Text Processing :: Filters
+Classifier: Topic :: Text Processing :: General
+Classifier: Topic :: Text Processing :: Indexing
+Classifier: Topic :: Text Processing :: Linguistic
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE.txt
+License-File: AUTHORS.md
+License-File: README.md
+Requires-Dist: defusedxml
+Requires-Dist: click
+Requires-Dist: joblib
+Requires-Dist: regex>=2021.8.3
+Requires-Dist: tqdm
+Provides-Extra: machine-learning
+Requires-Dist: numpy; extra == "machine-learning"
+Requires-Dist: python-crfsuite; extra == "machine-learning"
+Requires-Dist: scikit-learn; extra == "machine-learning"
+Requires-Dist: scipy; extra == "machine-learning"
+Provides-Extra: plot
+Requires-Dist: matplotlib; extra == "plot"
+Provides-Extra: tgrep
+Requires-Dist: pyparsing; extra == "tgrep"
+Provides-Extra: twitter
+Requires-Dist: twython; extra == "twitter"
+Provides-Extra: corenlp
+Requires-Dist: requests; extra == "corenlp"
+Provides-Extra: all
+Requires-Dist: requests; extra == "all"
+Requires-Dist: twython; extra == "all"
+Requires-Dist: python-crfsuite; extra == "all"
+Requires-Dist: numpy; extra == "all"
+Requires-Dist: scipy; extra == "all"
+Requires-Dist: scikit-learn; extra == "all"
+Requires-Dist: matplotlib; extra == "all"
+Requires-Dist: pyparsing; extra == "all"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: license-file
+Dynamic: maintainer
+Dynamic: maintainer-email
+Dynamic: project-url
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Natural Language Toolkit (NLTK)
+[![PyPI](https://img.shields.io/pypi/v/nltk.svg)](https://pypi.python.org/pypi/nltk)
+![CI](https://github.com/nltk/nltk/actions/workflows/ci.yml/badge.svg?branch=develop)
+
+NLTK -- the Natural Language Toolkit -- is a suite of open source Python
+modules, data sets, and tutorials supporting research and development in Natural
+Language Processing. NLTK requires Python version from 3.10 up to the latest 3.14.
+
+For documentation, please visit [nltk.org](https://www.nltk.org/).
+
+
+## Contributing
+
+Do you want to contribute to NLTK development? Great!
+Please read [CONTRIBUTING.md](https://github.com/nltk/nltk/blob/develop/CONTRIBUTING.md) for more details.
+
+See also [how to contribute to NLTK](https://www.nltk.org/contribute.html).
+
+
+## Donate
+
+Have you found the toolkit helpful?  Please support NLTK development by donating
+to the project via PayPal, using the link on the NLTK homepage.
+
+
+## Citing
+
+If you publish work that uses NLTK, please cite the NLTK book, as follows:
+
+    Bird, Steven, Edward Loper and Ewan Klein (2009).
+    Natural Language Processing with Python.  O'Reilly Media Inc.
+
+
+## Copyright
+
+Copyright (C) 2001-2026 NLTK Project
+
+For license information, see [LICENSE.txt](https://github.com/nltk/nltk/blob/develop/LICENSE.txt).
+
+[AUTHORS.md](https://github.com/nltk/nltk/blob/develop/AUTHORS.md) contains a list of everyone who has contributed to NLTK.
+
+
+### Redistributing
+
+- NLTK source code is distributed under the Apache 2.0 License.
+- NLTK documentation is distributed under the Creative Commons
+  Attribution-Noncommercial-No Derivative Works 3.0 United States license.
+- NLTK corpora are provided under the terms given in the README file for each
+  corpus; all are redistributable and available for non-commercial use.
+- NLTK may be freely redistributed, subject to the provisions of these licenses.
