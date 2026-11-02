@@ -1,6 +1,8 @@
 """
 CI/CD pipeline in Python.
 """
+import json
+import os
 import argparse
 import hashlib
 import json
@@ -34,7 +36,7 @@ def deploy():
     name = params["train"]["registered_model_name"]
     metrics = json.load(open("models/metrics.json"))
 
-    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
     client = mlflow.MlflowClient()
     version = str(metrics["model_version"])
     client.set_registered_model_alias(name, "champion", version)

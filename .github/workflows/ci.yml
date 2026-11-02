@@ -3,16 +3,26 @@ name: Titanic MLOps CI/CD
 on:
   push:
     branches: [main]
-    paths: ["data/**", "src/**", "api/**", "tests/**", "params.yaml", "requirements.txt"]
+    paths:
+      - "data/**"
+      - "src/**"
+      - "api/**"
+      - "tests/**"
+      - "params.yaml"
+      - "requirements.txt"
+      - "run_pipeline.py"
+      - ".github/workflows/**"
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 6 * * 1"   
+    - cron: "0 6 * * 1"  
   workflow_dispatch:      
 
 jobs:
   train-test-deploy:
     runs-on: ubuntu-latest
+    env:
+      MLFLOW_TRACKING_URI: sqlite:////tmp/ci-mlflow.db
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,6 +36,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Start with a fresh MLflow store (never reuse a local one)
+        run: rm -rf mlflow.db mlruns mlartifacts
+
+      # The raw CSV is tracked by DVC, not git, so CI fetches it.
       - name: Get data
         run: |
           if [ ! -f data/raw/titanic.csv ]; then

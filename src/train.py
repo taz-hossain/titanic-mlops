@@ -2,6 +2,7 @@
 Train, evaluate, and version models with MLflow.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from features import (BINARY_FEATURES, CATEGORICAL_FEATURES, NUMERIC_FEATURES,  
 
 MODELS_DIR = Path("models")
 MODELS_DIR.mkdir(exist_ok=True)
-mlflow.set_tracking_uri("sqlite:///mlflow.db")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db"))
 
 
 def build_preprocessor():
